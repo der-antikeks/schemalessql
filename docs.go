@@ -27,9 +27,11 @@ Example:
 	err := db.Delete(key)
 
 	// multi ops
-	keys, err := db.PutMulti([]keys, []entities)
-	err := db.GetMulti([]keys, []&entities)
-	err := db.DeleteMulti([]keys)
+	entities := []Entity{Entity{"A", time.Now()}, Entity{"B", time.Now()}}
+	keys, err := db.PutMulti(nil, entities, true)
+	results := make([]Entity, len(keys))
+	err := db.GetMulti(keys, results, true)
+	err := db.DeleteMulti(keys, true)
 
 	// query
 	err := db.Find(query map[string]interface{}, dsts []interface{})

@@ -201,17 +201,48 @@ func (d *Datastore) Put(key *Key, src interface{}) (*Key, error) {
 	return key, nil
 }
 
-func (d *Datastore) PutMulti(keys []*Key, srcs []interface{}, breakOnError bool) ([]*Key, error) {
-	if len(keys) != len(srcs) {
+func (d *Datastore) PutMultiO(keys []*Key, srcs []interface{}, breakOnError bool) ([]*Key, error) {
+	if keys == nil {
+		keys = make([]*Key, len(srcs))
+	} else if len(keys) != len(srcs) {
 		return keys, errors.New("keys and source slices must have equal length")
 	}
 
 	var e error
 	var err error
-	var nkeys []*Key
+	nkeys := make([]*Key, len(srcs))
 
 	for i, key := range keys {
 		nkeys[i], err = d.Put(key, srcs[i])
+		if err != nil {
+			if breakOnError {
+				return nkeys, err
+			}
+			e = err
+		}
+	}
+
+	return nkeys, e
+}
+
+func (d *Datastore) PutMulti(keys []*Key, srcs interface{}, breakOnError bool) ([]*Key, error) {
+	vsrcs := reflect.ValueOf(srcs)
+	if vsrcs.Kind() != reflect.Slice {
+		return keys, errors.New("source must be a slice")
+	}
+
+	if keys == nil {
+		keys = make([]*Key, vsrcs.Len())
+	} else if len(keys) != vsrcs.Len() {
+		return keys, errors.New("keys and source slices must have equal length")
+	}
+
+	var e error
+	var err error
+	nkeys := make([]*Key, vsrcs.Len())
+
+	for i, key := range keys {
+		nkeys[i], err = d.Put(key, vsrcs.Index(i).Interface())
 		if err != nil {
 			if breakOnError {
 				return nkeys, err
@@ -297,21 +328,31 @@ func (d *Datastore) Get(key *Key, dst interface{}) error {
 	return nil
 }
 
-func (d *Datastore) GetMulti(keys []*Key, dsts []interface{}, breakOnError bool) error {
-	if len(keys) != len(dsts) {
+func (d *Datastore) GetMulti(keys []*Key, dsts interface{}, breakOnError bool) error {
+	vdsts := reflect.ValueOf(dsts)
+	if vdsts.Kind() != reflect.Slice {
+		return errors.New("destination must be a slice")
+	}
+
+	if len(keys) != vdsts.Len() {
 		return errors.New("keys and destination slices must have equal length")
 	}
 
 	var e error
-
 	for i, key := range keys {
-		err := d.Get(key, dsts[i])
-		if err != nil {
-			if breakOnError {
-				return err
+
+		// TODO: wtf am i doing here?
+		switch vi := vdsts.Index(i).Addr().Interface().(type) {
+		default:
+			err := d.Get(key, vi)
+			if err != nil {
+				if breakOnError {
+					return err
+				}
+				e = err
 			}
-			e = err
 		}
+
 	}
 
 	return e

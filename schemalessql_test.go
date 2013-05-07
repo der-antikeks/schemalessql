@@ -114,12 +114,110 @@ func TestDelete(t *testing.T) {
 	}
 }
 
-// TODO
+func TestCreateMulti(t *testing.T) {
+	db := newDB(t)
+	defer closeDB(t, db)
 
-func TestCreateMulti(t *testing.T) {}
-func TestReadMulti(t *testing.T)   {}
-func TestUpdateMulti(t *testing.T) {}
-func TestDeleteMulti(t *testing.T) {}
+	entities := []interface{}{
+		Entity{123, 123.456, true, []byte{12, 34, 56}, "foo", time.Now(), time.Duration(3) * time.Minute},
+		Entity{456, 456.789, false, []byte{21, 43, 65}, "bar", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC), time.Duration(10) * time.Second},
+	}
+
+	if _, err := db.PutMulti(nil, entities, true); err != nil {
+		t.Fatalf("error creating entities: %v", err)
+	}
+}
+
+func TestReadMulti(t *testing.T) {
+	db := newDB(t)
+	defer closeDB(t, db)
+
+	entities := []Entity{
+		Entity{123, 123.456, true, []byte{12, 34, 56}, "foo", time.Now(), time.Duration(3) * time.Minute},
+		Entity{456, 456.789, false, []byte{21, 43, 65}, "bar", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC), time.Duration(10) * time.Second},
+	}
+
+	keys, err := db.PutMulti(nil, entities, true)
+	if err != nil {
+		t.Fatalf("error creating entities: %v", err)
+	}
+
+	results := make([]Entity, len(keys))
+	if err := db.GetMulti(keys, results, true); err != nil {
+		t.Fatalf("error reading entities: %v", err)
+	}
+
+	for i, e := range entities {
+		if r := results[i]; !reflect.DeepEqual(e, r) {
+			t.Fatalf("entities do not match: \n%v\n%v", e, r)
+		}
+	}
+}
+
+func TestUpdateMulti(t *testing.T) {
+	db := newDB(t)
+	defer closeDB(t, db)
+
+	entities := []Entity{
+		Entity{123, 123.456, true, []byte{12, 34, 56}, "foo", time.Now(), time.Duration(3) * time.Minute},
+		Entity{456, 456.789, false, []byte{21, 43, 65}, "bar", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC), time.Duration(10) * time.Second},
+	}
+
+	keys, err := db.PutMulti(nil, entities, true)
+	if err != nil {
+		t.Fatalf("error creating entities: %v", err)
+	}
+
+	updated := make([]Entity, len(entities))
+	copy(updated, entities)
+
+	updated[0].E = "updated data"
+	updated[0].F = time.Now().Add(updated[0].IgnoreMe.(time.Duration))
+	updated[1].E = "updated data2"
+	updated[1].F = time.Now().Add(updated[1].IgnoreMe.(time.Duration))
+	if _, err := db.PutMulti(keys, updated, true); err != nil {
+		t.Fatalf("error updating entity: %v", err)
+	}
+
+	results := make([]Entity, len(keys))
+	if err := db.GetMulti(keys, results, true); err != nil {
+		t.Fatalf("error reading entities: %v", err)
+	}
+
+	for i, u := range updated {
+		r := results[i]
+		if reflect.DeepEqual(entities[i], u) || !reflect.DeepEqual(u, r) {
+			t.Fatalf("entities do not match: \n%v\n%v", u, r)
+		}
+	}
+
+}
+
+func TestDeleteMulti(t *testing.T) {
+	db := newDB(t)
+	defer closeDB(t, db)
+
+	entities := []Entity{
+		Entity{123, 123.456, true, []byte{12, 34, 56}, "foo", time.Now(), time.Duration(3) * time.Minute},
+		Entity{456, 456.789, false, []byte{21, 43, 65}, "bar", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC), time.Duration(10) * time.Second},
+	}
+
+	keys, err := db.PutMulti(nil, entities, true)
+	if err != nil {
+		t.Fatalf("error creating entities: %v", err)
+	}
+
+	if err := db.DeleteMulti(keys, true); err != nil {
+		t.Fatalf("error deleting entities: %v", err)
+	}
+
+	results := make([]Entity, len(keys))
+	if err := db.GetMulti(keys, results, true); err != sql.ErrNoRows {
+		t.Fatalf("failed to delete entities: %v", err)
+	}
+}
+
+// TODO
 
 func TestQuery(t *testing.T)      {}
 func TestQueryMulti(t *testing.T) {}
