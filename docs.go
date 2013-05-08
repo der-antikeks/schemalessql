@@ -7,8 +7,18 @@ Example:
 	defer db.Close()
 
 	type Entity struct {
-		Value   string
-		Changed time.Time
+		Value      string
+		Changed    time.Time
+		LastLoaded time.Time
+		LastSaved  time.Time
+	}
+
+	func (e *Entity) BeforeSave() {
+		e.LastSaved = time.Now()
+	}
+
+	func (e *Entity) AfterLoad() {
+		e.LastLoaded = time.Now()
 	}
 
 	// create

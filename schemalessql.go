@@ -142,7 +142,19 @@ type Key struct {
 	int64
 }
 
+type BeforeSaver interface {
+	BeforeSave()
+}
+
+type AfterSaver interface {
+	AfterSave()
+}
+
 func (d *Datastore) Put(key *Key, src interface{}) (*Key, error) {
+	if bs, ok := src.(BeforeSaver); ok {
+		bs.BeforeSave()
+	}
+
 	if err := d.Register(src); err != nil {
 		return key, err
 	}
@@ -200,6 +212,11 @@ func (d *Datastore) Put(key *Key, src interface{}) (*Key, error) {
 	}
 
 	tx.Commit()
+
+	if as, ok := src.(AfterSaver); ok {
+		as.AfterSave()
+	}
+
 	return key, nil
 }
 
@@ -234,6 +251,10 @@ func (d *Datastore) PutMulti(keys []*Key, srcs interface{}, breakOnError bool) (
 
 func (d *Datastore) createIndices(key *Key, e interface{}, tx *sql.Tx) error {
 	v := reflect.ValueOf(e)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+
 	codec, err := d.getStructCodec(v)
 	if err != nil {
 		return err
@@ -276,9 +297,21 @@ func (d *Datastore) getStructCodec(v reflect.Value) (map[string]string, error) {
 	return nil, errors.New("schemalessql: unknown entity type")
 }
 
+type BeforeLoader interface {
+	BeforeLoad()
+}
+
+type AfterLoader interface {
+	AfterLoad()
+}
+
 func (d *Datastore) Get(key *Key, dst interface{}) error {
 	if key == nil {
 		return sql.ErrNoRows
+	}
+
+	if bl, ok := dst.(BeforeLoader); ok {
+		bl.BeforeLoad()
 	}
 
 	if err := d.Register(dst); err != nil {
@@ -301,6 +334,10 @@ func (d *Datastore) Get(key *Key, dst interface{}) error {
 	dec := gob.NewDecoder(bytes.NewBufferString(data))
 	if err := dec.Decode(dst); err != nil {
 		return err
+	}
+
+	if al, ok := dst.(AfterLoader); ok {
+		al.AfterLoad()
 	}
 
 	return nil

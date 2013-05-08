@@ -237,6 +237,76 @@ func TestDeleteMulti(t *testing.T) {
 	}
 }
 
+type EntityCreateHook struct {
+	Data      string
+	LastSaved time.Time
+	Saved     bool
+}
+
+func (e *EntityCreateHook) BeforeSave() {
+	e.LastSaved = time.Now()
+}
+
+func (e *EntityCreateHook) AfterSave() {
+	e.Saved = true
+}
+
+func TestCreateHooks(t *testing.T) {
+	db := newDB(t)
+	defer closeDB(t, db)
+
+	e := EntityCreateHook{Data: "A"}
+	key, err := db.Put(nil, &e)
+	if err != nil {
+		t.Fatalf("error creating entity: %v", err)
+	}
+
+	var r EntityCreateHook
+	if err := db.Get(key, &r); err != nil {
+		t.Fatalf("error reading entity: %v", err)
+	}
+
+	if e.Data != r.Data || e.LastSaved != r.LastSaved || e.Saved == r.Saved {
+		t.Fatalf("entities do not match: \n%v\n%v", e, r)
+	}
+}
+
+type EntityReadHook struct {
+	Data       string
+	LastLoaded time.Time
+	Loaded     bool
+	Test       bool
+}
+
+func (e *EntityReadHook) BeforeLoad() {
+	e.Test = true
+}
+
+func (e *EntityReadHook) AfterLoad() {
+	e.LastLoaded = time.Now()
+	e.Loaded = true
+}
+
+func TestReadHooks(t *testing.T) {
+	db := newDB(t)
+	defer closeDB(t, db)
+
+	e := EntityReadHook{Data: "A"}
+	key, err := db.Put(nil, &e)
+	if err != nil {
+		t.Fatalf("error creating entity: %v", err)
+	}
+
+	var r EntityReadHook
+	if err := db.Get(key, &r); err != nil {
+		t.Fatalf("error reading entity: %v", err)
+	}
+
+	if e.Data != r.Data || e.LastLoaded == r.LastLoaded || e.Loaded == r.Loaded || e.Test == r.Test {
+		t.Fatalf("entities do not match: \n%v\n%v", e, r)
+	}
+}
+
 // TODO
 
 func TestQuery(t *testing.T)      {}
