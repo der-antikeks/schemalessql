@@ -48,10 +48,11 @@ func Open(driverName, dataSourceName string) (*Datastore, error) {
 func (d *Datastore) Register(src interface{}) error {
 	// check if already registered
 
-	t := reflect.TypeOf(src)
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
+	v := reflect.ValueOf(src)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
 	}
+	t := v.Type()
 
 	d.structure.RLock()
 	if d.structure.created[t] {
@@ -80,22 +81,23 @@ func (d *Datastore) Register(src interface{}) error {
 	}
 
 	// create index tables for registered reflect.Type
-	v := reflect.ValueOf(src)
 	n := t.NumField()
 
 	d.structure.codec[t] = make(map[string]string)
 
 	for i := 0; i < n; i++ {
 		vt := t.Field(i)
+		vf := v.Field(i)
 
 		// register type for gob
-		gob.Register(v.Field(i).Interface())
+		if vf.CanInterface() && vf.Interface() != nil {
+			gob.Register(vf.Interface())
+		}
 
 		if vt.Tag.Get("datastore") == "noindex" {
 			continue
 		}
 
-		vf := v.Field(i)
 		var fieldtype string
 
 		switch /*vi :=*/ vf.Interface().(type) {
@@ -199,30 +201,6 @@ func (d *Datastore) Put(key *Key, src interface{}) (*Key, error) {
 
 	tx.Commit()
 	return key, nil
-}
-
-func (d *Datastore) PutMultiO(keys []*Key, srcs []interface{}, breakOnError bool) ([]*Key, error) {
-	if keys == nil {
-		keys = make([]*Key, len(srcs))
-	} else if len(keys) != len(srcs) {
-		return keys, errors.New("keys and source slices must have equal length")
-	}
-
-	var e error
-	var err error
-	nkeys := make([]*Key, len(srcs))
-
-	for i, key := range keys {
-		nkeys[i], err = d.Put(key, srcs[i])
-		if err != nil {
-			if breakOnError {
-				return nkeys, err
-			}
-			e = err
-		}
-	}
-
-	return nkeys, e
 }
 
 func (d *Datastore) PutMulti(keys []*Key, srcs interface{}, breakOnError bool) ([]*Key, error) {

@@ -37,6 +37,26 @@ func closeDB(t *testing.T, db *schemalessql.Datastore) {
 	}
 }
 
+func TestRegister1(t *testing.T) {
+	db := newDB(t)
+	defer closeDB(t, db)
+
+	a := Entity{123, 123.456, true, []byte{12, 34, 56}, "foo", time.Now(), time.Duration(3) * time.Minute}
+	if err := db.Register(a); err != nil {
+		t.Fatalf("error registering entity: %v", err)
+	}
+}
+
+func TestRegister2(t *testing.T) {
+	db := newDB(t)
+	defer closeDB(t, db)
+
+	var a Entity
+	if err := db.Register(&a); err != nil {
+		t.Fatalf("error registering entity: %v", err)
+	}
+}
+
 func TestCreate(t *testing.T) {
 	db := newDB(t)
 	defer closeDB(t, db)
