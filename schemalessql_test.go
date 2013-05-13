@@ -37,7 +37,7 @@ func closeDB(t *testing.T, db *schemalessql.Datastore) {
 	}
 }
 
-func TestRegister1(t *testing.T) {
+func TestRegisterStruct(t *testing.T) {
 	db := newDB(t)
 	defer closeDB(t, db)
 
@@ -47,12 +47,35 @@ func TestRegister1(t *testing.T) {
 	}
 }
 
-func TestRegister2(t *testing.T) {
+func TestRegisterPointer(t *testing.T) {
 	db := newDB(t)
 	defer closeDB(t, db)
 
 	var a Entity
 	if err := db.Register(&a); err != nil {
+		t.Fatalf("error registering entity: %v", err)
+	}
+}
+
+type EntityA struct {
+	Data float64
+}
+
+type EntityB struct {
+	Data string
+}
+
+func TestRegisterDuplicate(t *testing.T) {
+	db := newDB(t)
+	defer closeDB(t, db)
+
+	var a EntityA
+	if err := db.Register(&a); err != nil {
+		t.Fatalf("error registering entity: %v", err)
+	}
+
+	var b EntityB
+	if err := db.Register(&b); err != nil {
 		t.Fatalf("error registering entity: %v", err)
 	}
 }

@@ -28,7 +28,7 @@ type Datastore struct {
 	structure struct {
 		sync.RWMutex
 		created map[reflect.Type]bool
-		codec   map[reflect.Type]map[string]string
+		codec   map[string]string
 	}
 }
 
@@ -40,7 +40,7 @@ func Open(driverName, dataSourceName string) (*Datastore, error) {
 
 	d := Datastore{sql.DB: db}
 	d.structure.created = make(map[reflect.Type]bool)
-	d.structure.codec = make(map[reflect.Type]map[string]string)
+	d.structure.codec = make(map[string]string)
 	return &d, nil
 }
 
@@ -83,8 +83,6 @@ func (d *Datastore) Register(src interface{}) error {
 	// create index tables for registered reflect.Type
 	n := t.NumField()
 
-	d.structure.codec[t] = make(map[string]string)
-
 	for i := 0; i < n; i++ {
 		vt := t.Field(i)
 		vf := v.Field(i)
@@ -121,7 +119,14 @@ func (d *Datastore) Register(src interface{}) error {
 		}
 
 		fieldname := vt.Name
-		d.structure.codec[t][fieldname] = fieldtype
+
+		if tmptype, ok := d.structure.codec[fieldname]; ok && tmptype != fieldtype {
+			// fieldname already used, with wrong type
+			// TODO: return more informative error message
+			return ErrCouldNotSetup
+		}
+
+		d.structure.codec[fieldname] = fieldtype
 
 		if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS '` + IndexPrefix + `_` + fieldname + `' ('entitiy_id' INTEGER NOT NULL UNIQUE, 'value' ` + fieldtype + `)`); err != nil {
 			return ErrCouldNotSetup
@@ -290,8 +295,9 @@ func (d *Datastore) getStructCodec(v reflect.Value) (map[string]string, error) {
 	d.structure.RLock()
 	defer d.structure.RUnlock()
 
-	if codec, ok := d.structure.codec[t]; ok {
-		return codec, nil
+	// TODO: return only codec of type
+	if d.structure.created[t] {
+		return d.structure.codec, nil
 	}
 
 	return nil, errors.New("schemalessql: unknown entity type")
@@ -397,21 +403,19 @@ func (d *Datastore) Delete(key *Key) error {
 	d.structure.RLock()
 	defer d.structure.RUnlock()
 
-	// structure.codec = map[reflect.Type]map[string]string
-	for _, codec := range d.structure.codec {
-		for fieldname, _ := range codec {
+	// structure.codec = map[string]string
+	for fieldname, _ := range d.structure.codec {
 
-			stmt, err := tx.Prepare(`DELETE FROM '` + IndexPrefix + `_` + fieldname + `' WHERE entitiy_id=?`)
-			if err != nil {
-				return err
-			}
-			defer stmt.Close()
-
-			if _, err := stmt.Exec(key.int64); err != nil {
-				return err
-			}
-
+		stmt, err := tx.Prepare(`DELETE FROM '` + IndexPrefix + `_` + fieldname + `' WHERE entitiy_id=?`)
+		if err != nil {
+			return err
 		}
+		defer stmt.Close()
+
+		if _, err := stmt.Exec(key.int64); err != nil {
+			return err
+		}
+
 	}
 
 	tx.Commit()
