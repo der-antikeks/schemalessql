@@ -6,7 +6,7 @@ import (
 	//	"database/sql/driver"
 	"encoding/gob"
 	"errors"
-	//"log"
+	"log"
 	"reflect"
 	"sync"
 	"time"
@@ -440,8 +440,80 @@ func (d *Datastore) DeleteMulti(keys []*Key, breakOnError bool) error {
 
 // TODO
 
-func (d *Datastore) Find(query map[string]interface{}, dsts []interface{}) error {
-	return errors.New("schemalessql: not yet implemented")
+func (d *Datastore) FindKeys(query map[string]interface{}) ([]*Key, error) {
+	tmp := make(map[int64]int)
+
+	for fieldname, value := range query {
+		// TODO: is this safe for concurrent use? I bet not
+		if _, found := d.structure.codec[fieldname]; !found {
+			//continue
+			return nil, sql.ErrNoRows
+		}
+
+		stmt, err := d.Prepare(`SELECT entitiy_id FROM '` + IndexPrefix + `_` + fieldname + `' WHERE value=?`)
+		if err != nil {
+			return nil, err
+		}
+		defer stmt.Close()
+
+		rows, err := stmt.Query(value)
+		if err != nil {
+			return nil, err
+		}
+
+		for rows.Next() {
+			var id int64
+			rows.Scan(&id)
+			tmp[id]++
+		}
+	}
+
+	l := len(query)
+	var result []*Key
+
+	for i, n := range tmp {
+		if n == l {
+			result = append(result, &Key{i})
+		}
+	}
+
+	return result, nil
+}
+
+func (d *Datastore) Find(query map[string]interface{}, dsts interface{}) error {
+	vdsts := reflect.ValueOf(dsts)
+	if vdsts.Kind() != reflect.Map || vdsts.Type().Key() != reflect.TypeOf(Key{}) {
+		return errors.New("destination must be a map of keys and interfaces")
+	}
+
+	log.Printf("%T => %v", vdsts, vdsts)
+
+	keys, err := d.FindKeys(query)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("found keys: %v", keys)
+
+	log.Printf("dsts: %T => %v", dsts, dsts)
+
+	l := len(keys)
+	// TODO: go1.1 http://tip.golang.org/pkg/reflect/#SliceOf
+	tmp := reflect.MakeSlice(reflect.SliceOf(vdsts.Type().Elem()), l, l)
+
+	if err := d.GetMulti(keys, tmp, true); err != nil {
+		return err
+	}
+
+	log.Printf("results: %v", tmp)
+
+	for i, e := range tmp {
+		dsts[keys[i]] = tmp[i]
+	}
+
+	log.Printf("results: %v", dsts)
+
+	return nil
 }
 
 func (d *Datastore) FindOne(query map[string]interface{}, dst interface{}) error {
