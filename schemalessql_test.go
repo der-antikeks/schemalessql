@@ -71,12 +71,12 @@ func TestRegisterDuplicate(t *testing.T) {
 
 	var a EntityA
 	if err := db.Register(&a); err != nil {
-		t.Fatalf("error registering entity: %v", err)
+		t.Fatalf("error registering entity a: %v", err)
 	}
 
 	var b EntityB
-	if err := db.Register(&b); err != nil {
-		t.Fatalf("error registering entity: %v", err)
+	if err := db.Register(&b); err == nil {
+		t.Fatalf("should receive error while registering entity b but got: %v", err)
 	}
 }
 
