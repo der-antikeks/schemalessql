@@ -330,9 +330,7 @@ func TestReadHooks(t *testing.T) {
 	}
 }
 
-// TODO
-
-func TestQuery(t *testing.T) {
+func TestQueryMulti(t *testing.T) {
 	db := newDB(t)
 	defer closeDB(t, db)
 
@@ -345,29 +343,39 @@ func TestQuery(t *testing.T) {
 		t.Fatalf("error creating entities: %v", err)
 	}
 
-	query := make(map[string]interface{})
-	results := make(map[schemalessql.Key]Entity)
-
-	query["C"] = true
-	query["A"] = 456
-	//query["B"] = 123.456
-
-	if err := db.Find(query, results); err != nil {
-		t.Fatalf("error finding entities: %v", err)
+	query := map[string]interface{}{
+		"A": 123,
+		"C": true,
 	}
 
-	for i, r := range results {
-		t.Fatalf("result: \n%v => %v", i, r)
+	results, err := db.Find(query, Entity{})
+	if err != nil {
+		t.Fatalf("error finding entities: %v", err)
 	}
 
 	if n := len(results); n != 1 {
 		t.Fatalf("error finding entities, number of results: %v", n)
 	}
 
-	if !reflect.DeepEqual(entities[0], results[schemalessql.Key{0}]) {
-		t.Fatalf("error finding entities, result does not match: \n%v\n%v", entities[0], results[schemalessql.Key{0}])
+	if !reflect.DeepEqual(entities[0], results[0]) {
+		t.Fatalf("error finding entities, result does not match: \n%v\n%v", entities[0], results[0])
+	}
+
+	results, err = db.Find(map[string]interface{}{"C": true}, Entity{})
+	if err != nil {
+		t.Fatalf("error finding entities: %v", err)
+	}
+
+	if n := len(results); n != 2 {
+		t.Fatalf("error finding entities, number of results: %v", n)
+	}
+
+	if !reflect.DeepEqual(entities[0], results[0]) || !reflect.DeepEqual(entities[1], results[1]) {
+		t.Fatalf("error finding entities, result does not match: \n%v\n%v", entities[0], results[1])
 	}
 
 }
 
-func TestQueryMulti(t *testing.T) {}
+// TODO
+
+func TestQuery(t *testing.T) {}

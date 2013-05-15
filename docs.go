@@ -37,15 +37,26 @@ Example:
 	err := db.Delete(key)
 
 	// multi ops
-	entities := []Entity{Entity{"A", time.Now()}, Entity{"B", time.Now()}}
+	entities := []Entity{
+		Entity{"A", time.Now()},
+		Entity{"B", time.Now()},
+	}
 	keys, err := db.PutMulti(nil, entities, true)
+
 	results := make([]Entity, len(keys))
 	err := db.GetMulti(keys, results, true)
+
 	err := db.DeleteMulti(keys, true)
 
 	// query
-	err := db.Find(query map[string]interface{}, dsts []interface{})
-	err := db.FindOne(query map[string]interface{}, dst interface{})
+	query := map[string]interface{}{
+		"A": 123,
+		"C": true,
+	}
+	results, err := db.Find(query, Entity{})
+
+	var r Entity
+	err := db.FindOne(query, &r)
 
 */
 package schemalessql

@@ -6,7 +6,7 @@ import (
 	//	"database/sql/driver"
 	"encoding/gob"
 	"errors"
-	"log"
+	//"log"
 	"reflect"
 	"sync"
 	"time"
@@ -38,7 +38,7 @@ func Open(driverName, dataSourceName string) (*Datastore, error) {
 		return nil, err
 	}
 
-	d := Datastore{sql.DB: db}
+	d := Datastore{DB: db}
 	d.structure.created = make(map[reflect.Type]bool)
 	d.structure.codec = make(map[string]string)
 	return &d, nil
@@ -480,40 +480,34 @@ func (d *Datastore) FindKeys(query map[string]interface{}) ([]*Key, error) {
 	return result, nil
 }
 
-func (d *Datastore) Find(query map[string]interface{}, dsts interface{}) error {
-	vdsts := reflect.ValueOf(dsts)
-	if vdsts.Kind() != reflect.Map || vdsts.Type().Key() != reflect.TypeOf(Key{}) {
-		return errors.New("destination must be a map of keys and interfaces")
+func (d *Datastore) Find(query map[string]interface{}, destype interface{}) ([]interface{}, error) {
+	vdestype := reflect.ValueOf(destype)
+	if vdestype.Kind() != reflect.Struct {
+		return nil, errors.New("destination type must be a struct")
 	}
-
-	log.Printf("%T => %v", vdsts, vdsts)
 
 	keys, err := d.FindKeys(query)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	log.Printf("found keys: %v", keys)
+	var dsts []interface{}
+	for _, key := range keys {
 
-	log.Printf("dsts: %T => %v", dsts, dsts)
+		// I must admit that I have no idea why I can not directly pass the value instead of the pointer
+		// TODO: panic: reflect: NumField of non-struct type @ Register() :84
+		//e := reflect.Zero(vdestype.Type()).Interface()
+		e := reflect.New(vdestype.Type()).Interface()
+		err := d.Get(key, e /* & */)
+		if err != nil {
+			return nil, err
+		}
 
-	l := len(keys)
-	// TODO: go1.1 http://tip.golang.org/pkg/reflect/#SliceOf
-	tmp := reflect.MakeSlice(reflect.SliceOf(vdsts.Type().Elem()), l, l)
-
-	if err := d.GetMulti(keys, tmp, true); err != nil {
-		return err
+		//dsts = append(dsts, e)
+		dsts = append(dsts, reflect.ValueOf(e).Elem().Interface())
 	}
 
-	log.Printf("results: %v", tmp)
-
-	for i, e := range tmp {
-		dsts[keys[i]] = tmp[i]
-	}
-
-	log.Printf("results: %v", dsts)
-
-	return nil
+	return dsts, nil
 }
 
 func (d *Datastore) FindOne(query map[string]interface{}, dst interface{}) error {
