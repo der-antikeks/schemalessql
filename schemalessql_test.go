@@ -376,6 +376,31 @@ func TestQueryMulti(t *testing.T) {
 
 }
 
-// TODO
+func TestQuery(t *testing.T) {
+	db := newDB(t)
+	defer closeDB(t, db)
 
-func TestQuery(t *testing.T) {}
+	entities := []interface{}{
+		Entity{123, 123.456, true, []byte{12, 34, 56}, "foo", time.Now(), time.Duration(3) * time.Minute},
+		Entity{456, 456.789, true, []byte{21, 43, 65}, "bar", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC), time.Duration(10) * time.Second},
+	}
+
+	if _ /* keys */, err := db.PutMulti(nil, entities, true); err != nil {
+		t.Fatalf("error creating entities: %v", err)
+	}
+
+	query := map[string]interface{}{
+		"A": 456,
+		"C": true,
+	}
+
+	var r Entity
+	if err := db.FindOne(query, &r); err != nil {
+		t.Fatalf("error finding entity: %v", err)
+	}
+
+	if !reflect.DeepEqual(entities[1], r) {
+		t.Fatalf("error finding entity, result does not match: \n%v\n%v", entities[0], r)
+	}
+
+}

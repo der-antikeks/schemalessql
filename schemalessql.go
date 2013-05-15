@@ -511,5 +511,18 @@ func (d *Datastore) Find(query map[string]interface{}, destype interface{}) ([]i
 }
 
 func (d *Datastore) FindOne(query map[string]interface{}, dst interface{}) error {
-	return errors.New("schemalessql: not yet implemented")
+	keys, err := d.FindKeys(query)
+	if err != nil {
+		return err
+	}
+
+	if len(keys) < 1 {
+		return sql.ErrNoRows
+	}
+
+	if err := d.Get(keys[0], dst); err != nil {
+		return err
+	}
+
+	return nil
 }
