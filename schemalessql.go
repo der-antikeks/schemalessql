@@ -10,11 +10,14 @@ import (
 	"time"
 )
 
-var (
-	EntityTable = "entities"
-	IndexPrefix = "index"
-)
+// Table in which the gob encoded data is stored.
+var EntityTable = "entities"
 
+// Prefix for tables in which the indices are stored.
+// ("IndexPrefix"_fieldname)
+var IndexPrefix = "index"
+
+// Datatstore contains the database handle and controls the creation of necessary tables.
 type Datastore struct {
 	*sql.DB
 	structure struct {
@@ -24,6 +27,7 @@ type Datastore struct {
 	}
 }
 
+// Open opens a database specified by its database driver name and a driver-specific data source name, usually consisting of at least a database name and connection information.
 func Open(driverName, dataSourceName string) (*Datastore, error) {
 	db, err := sql.Open(driverName, dataSourceName)
 	if err != nil {
@@ -36,7 +40,7 @@ func Open(driverName, dataSourceName string) (*Datastore, error) {
 	return &d, nil
 }
 
-// Register creates entitiy and index tables with suitable types
+// Register creates entitiy and index tables with suitable types.
 func (d *Datastore) Register(src interface{}) error {
 	v := reflect.ValueOf(src)
 	if v.Kind() == reflect.Ptr {
@@ -59,16 +63,16 @@ func (d *Datastore) Register(src interface{}) error {
 	// new type, create entity table
 	tx, err := d.Begin()
 	if err != nil {
-		return fmt.Errorf("schemalessql: required tables/indexes could not be created: %v", err)
+		return fmt.Errorf("schemalessql: required tables/indices could not be created: %v", err)
 	}
 	defer tx.Rollback()
 
 	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS '` + EntityTable + `' ('id' INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 'data' BLOB NOT NULL)`); err != nil {
-		return fmt.Errorf("schemalessql: required tables/indexes could not be created: %v", err)
+		return fmt.Errorf("schemalessql: required tables/indices could not be created: %v", err)
 	}
 
 	if _, err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS 'id_index' ON '` + EntityTable + `' ('id' ASC)`); err != nil {
-		return fmt.Errorf("schemalessql: required tables/indexes could not be created: %v", err)
+		return fmt.Errorf("schemalessql: required tables/indices could not be created: %v", err)
 	}
 
 	// create index tables for registered reflect.Type
@@ -121,11 +125,11 @@ func (d *Datastore) Register(src interface{}) error {
 			d.structure.codec[fieldname] = fieldtype
 
 			if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS '` + IndexPrefix + `_` + fieldname + `' ('entitiy_id' INTEGER NOT NULL UNIQUE, 'value' ` + fieldtype + `)`); err != nil {
-				return fmt.Errorf("schemalessql: required tables/indexes could not be created: %v", err)
+				return fmt.Errorf("schemalessql: required tables/indices could not be created: %v", err)
 			}
 
 			if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS 'id_value_index' ON '` + IndexPrefix + `_` + fieldname + `' ('entitiy_id' ASC, 'value' ASC)`); err != nil {
-				return fmt.Errorf("schemalessql: required tables/indexes could not be created: %v", err)
+				return fmt.Errorf("schemalessql: required tables/indices could not be created: %v", err)
 			}
 		}
 	}
@@ -135,18 +139,24 @@ func (d *Datastore) Register(src interface{}) error {
 	return nil
 }
 
+// Key is the primary key of a saved Entity
 type Key struct {
 	int64
 }
 
+// The BeforeSave() method of an entity that satisfies schemalessql.BeforeSaver is called before saving to database.
 type BeforeSaver interface {
 	BeforeSave()
 }
 
+// The AfterSave() method of an entity that satisfies schemalessql.AfterSaver is called after saving to database.
 type AfterSaver interface {
 	AfterSave()
 }
 
+// Put saves the provided entity gob-encoded into the database and updates the corresponding index tables.
+// An existing entity and its indices will be updated if a non-nil Key is passed.
+// The Key of the updated or created database entry is returned.
 func (d *Datastore) Put(key *Key, src interface{}) (*Key, error) {
 	if bs, ok := src.(BeforeSaver); ok {
 		bs.BeforeSave()
@@ -217,6 +227,8 @@ func (d *Datastore) Put(key *Key, src interface{}) (*Key, error) {
 	return key, nil
 }
 
+// PutMulti is identical to Put, except that it takes multiple entities and keys.
+// If breakOnError is true the method will return as soon as an error occurs.
 func (d *Datastore) PutMulti(keys []*Key, srcs interface{}, breakOnError bool) ([]*Key, error) {
 	vsrcs := reflect.ValueOf(srcs)
 	if vsrcs.Kind() != reflect.Slice {
@@ -246,6 +258,7 @@ func (d *Datastore) PutMulti(keys []*Key, srcs interface{}, breakOnError bool) (
 	return nkeys, e
 }
 
+// createIndices inserts new data into the index tables.
 func (d *Datastore) createIndices(key *Key, e interface{}, tx *sql.Tx) error {
 	v := reflect.ValueOf(e)
 	if v.Kind() == reflect.Ptr {
@@ -280,6 +293,7 @@ func (d *Datastore) createIndices(key *Key, e interface{}, tx *sql.Tx) error {
 	return nil
 }
 
+// getStructCodec returns the structure of the provided value if it has been registered before.
 func (d *Datastore) getStructCodec(v reflect.Value) (map[string]string, error) {
 	t := v.Type()
 
@@ -294,14 +308,18 @@ func (d *Datastore) getStructCodec(v reflect.Value) (map[string]string, error) {
 	return nil, fmt.Errorf("schemalessql: unknown entity type %v", t)
 }
 
+// The BeforeLoad() method of an entity that satisfies schemalessql.BeforeLoader is called before it will be filled with data.
 type BeforeLoader interface {
 	BeforeLoad()
 }
 
+// The AfterLoad() method of an entity that satisfies schemalessql.AfterLoader is called after it was filled with data.
 type AfterLoader interface {
 	AfterLoad()
 }
 
+// Get fetches an entity with the Key and gob-decodes it into the provided interface.
+// If no entry is found for this Key, sql.ErrNoRows is returned.
 func (d *Datastore) Get(key *Key, dst interface{}) error {
 	if key == nil {
 		return sql.ErrNoRows
@@ -344,6 +362,8 @@ func (d *Datastore) Get(key *Key, dst interface{}) error {
 	return nil
 }
 
+// GetMulti is identical to Get, except that it takes multiple keys.
+// If breakOnError is true the method will return as soon as an error occurs.
 func (d *Datastore) GetMulti(keys []*Key, dsts interface{}, breakOnError bool) error {
 	vdsts := reflect.ValueOf(dsts)
 	if vdsts.Kind() != reflect.Slice {
@@ -374,6 +394,8 @@ func (d *Datastore) GetMulti(keys []*Key, dsts interface{}, breakOnError bool) e
 	return e
 }
 
+// Delete removes the entity of the provided Key and its indices from the database.
+// If no entry is found for this Key, sql.ErrNoRows is returned.
 func (d *Datastore) Delete(key *Key) error {
 	if key == nil {
 		return sql.ErrNoRows
@@ -417,6 +439,8 @@ func (d *Datastore) Delete(key *Key) error {
 	return nil
 }
 
+// DeleteMulti is identical to Delete, except that it takes multiple keys.
+// If breakOnError is true the method will return as soon as an error occurs.
 func (d *Datastore) DeleteMulti(keys []*Key, breakOnError bool) error {
 	var e error
 
@@ -433,8 +457,8 @@ func (d *Datastore) DeleteMulti(keys []*Key, breakOnError bool) error {
 	return e
 }
 
-// TODO
-
+// FindKeys searches indexed fields for all entries that match the filter criteria and returns its keys.
+// If no entry is found, sql.ErrNoRows is returned.
 func (d *Datastore) FindKeys(query map[string]interface{}) ([]*Key, error) {
 	tmp := make(map[int64]int)
 
@@ -479,6 +503,8 @@ func (d *Datastore) FindKeys(query map[string]interface{}) ([]*Key, error) {
 	return result, nil
 }
 
+// Find searches indexed fields for all entries that match the filter criteria and returns these as a slice of the provided interface.
+// If no entry is found, sql.ErrNoRows is returned.
 func (d *Datastore) Find(query map[string]interface{}, destype interface{}) ([]interface{}, error) {
 	vdestype := reflect.ValueOf(destype)
 	if vdestype.Kind() != reflect.Struct {
@@ -509,6 +535,7 @@ func (d *Datastore) Find(query map[string]interface{}, destype interface{}) ([]i
 	return dsts, nil
 }
 
+// FindOne is identical to Find, except that it returns only one entity.
 func (d *Datastore) FindOne(query map[string]interface{}, dst interface{}) error {
 	keys, err := d.FindKeys(query)
 	if err != nil {

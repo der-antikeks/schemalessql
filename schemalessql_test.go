@@ -232,7 +232,6 @@ func TestUpdateMulti(t *testing.T) {
 			t.Fatalf("entities do not match: \n%v\n%v", u, r)
 		}
 	}
-
 }
 
 func TestDeleteMulti(t *testing.T) {
