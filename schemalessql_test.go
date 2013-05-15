@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	// TODO: use fakedb for testing?
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -339,10 +338,11 @@ func TestQueryMulti(t *testing.T) {
 		Entity{456, 456.789, true, []byte{21, 43, 65}, "bar", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC), time.Duration(10) * time.Second},
 	}
 
-	if _ /* keys */, err := db.PutMulti(nil, entities, true); err != nil {
+	if _, err := db.PutMulti(nil, entities, true); err != nil {
 		t.Fatalf("error creating entities: %v", err)
 	}
 
+	// find one
 	query := map[string]interface{}{
 		"A": 123,
 		"C": true,
@@ -361,6 +361,7 @@ func TestQueryMulti(t *testing.T) {
 		t.Fatalf("error finding entities, result does not match: \n%v\n%v", entities[0], results[0])
 	}
 
+	// find two
 	results, err = db.Find(map[string]interface{}{"C": true}, Entity{})
 	if err != nil {
 		t.Fatalf("error finding entities: %v", err)
@@ -374,6 +375,16 @@ func TestQueryMulti(t *testing.T) {
 		t.Fatalf("error finding entities, result does not match: \n%v\n%v", entities[0], results[1])
 	}
 
+	// find nothing
+	results, err = db.Find(map[string]interface{}{"C": false}, Entity{})
+	if err != nil {
+		t.Fatalf("error finding entities: %v", err)
+	}
+
+	if n := len(results); n != 0 {
+		t.Fatalf("error finding entities, number of results: %v", n)
+	}
+
 }
 
 func TestQuery(t *testing.T) {
@@ -385,10 +396,11 @@ func TestQuery(t *testing.T) {
 		Entity{456, 456.789, true, []byte{21, 43, 65}, "bar", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC), time.Duration(10) * time.Second},
 	}
 
-	if _ /* keys */, err := db.PutMulti(nil, entities, true); err != nil {
+	if _, err := db.PutMulti(nil, entities, true); err != nil {
 		t.Fatalf("error creating entities: %v", err)
 	}
 
+	// find one
 	query := map[string]interface{}{
 		"A": 456,
 		"C": true,
@@ -401,6 +413,11 @@ func TestQuery(t *testing.T) {
 
 	if !reflect.DeepEqual(entities[1], r) {
 		t.Fatalf("error finding entity, result does not match: \n%v\n%v", entities[0], r)
+	}
+
+	// find nothing
+	if err := db.FindOne(map[string]interface{}{"C": false}, &r); err != sql.ErrNoRows {
+		t.Fatalf("error finding entity: %v", err)
 	}
 
 }

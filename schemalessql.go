@@ -3,19 +3,11 @@ package schemalessql
 import (
 	"bytes"
 	"database/sql"
-	//	"database/sql/driver"
 	"encoding/gob"
-	"errors"
-	//"log"
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
-)
-
-var (
-	ErrCouldNotSetup     = errors.New("schemalessql: required tables/indexes could not be created")
-	ErrInvalidEntityType = errors.New("schemalessql: invalid entity type")
-	ErrUnsupportedType   = errors.New("schemalessql: unsupported struct field type")
 )
 
 var (
@@ -46,14 +38,13 @@ func Open(driverName, dataSourceName string) (*Datastore, error) {
 
 // Register creates entitiy and index tables with suitable types
 func (d *Datastore) Register(src interface{}) error {
-	// check if already registered
-
 	v := reflect.ValueOf(src)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
 	t := v.Type()
 
+	// check if already registered
 	d.structure.RLock()
 	if d.structure.created[t] {
 		d.structure.RUnlock()
@@ -68,21 +59,20 @@ func (d *Datastore) Register(src interface{}) error {
 	// new type, create entity table
 	tx, err := d.Begin()
 	if err != nil {
-		return ErrCouldNotSetup
+		return fmt.Errorf("schemalessql: required tables/indexes could not be created: %v", err)
 	}
 	defer tx.Rollback()
 
 	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS '` + EntityTable + `' ('id' INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 'data' BLOB NOT NULL)`); err != nil {
-		return ErrCouldNotSetup
+		return fmt.Errorf("schemalessql: required tables/indexes could not be created: %v", err)
 	}
 
 	if _, err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS 'id_index' ON '` + EntityTable + `' ('id' ASC)`); err != nil {
-		return ErrCouldNotSetup
+		return fmt.Errorf("schemalessql: required tables/indexes could not be created: %v", err)
 	}
 
 	// create index tables for registered reflect.Type
 	n := t.NumField()
-
 	for i := 0; i < n; i++ {
 		vt := t.Field(i)
 		vf := v.Field(i)
@@ -98,7 +88,7 @@ func (d *Datastore) Register(src interface{}) error {
 
 		var fieldtype string
 
-		switch /*vi :=*/ vf.Interface().(type) {
+		switch vf.Interface().(type) {
 		case time.Time:
 			fieldtype = "DATETIME"
 		case []byte:
@@ -114,28 +104,30 @@ func (d *Datastore) Register(src interface{}) error {
 			case reflect.String:
 				fieldtype = "TEXT"
 			default:
-				return ErrUnsupportedType
+				return fmt.Errorf("schemalessql: unsupported struct field type: %v", vf.Kind())
 			}
 		}
 
 		fieldname := vt.Name
+		tmptype, found := d.structure.codec[fieldname]
 
-		if tmptype, ok := d.structure.codec[fieldname]; ok && tmptype != fieldtype {
+		if found && tmptype != fieldtype {
 			// fieldname already used, with wrong type
-			// TODO: return more informative error message
-			return ErrCouldNotSetup
+			return fmt.Errorf("schemalessql: could not register entity %v, field %v already registered as %v instead of %v", t, fieldname, tmptype, fieldtype)
 		}
 
-		d.structure.codec[fieldname] = fieldtype
+		// new field
+		if !found {
+			d.structure.codec[fieldname] = fieldtype
 
-		if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS '` + IndexPrefix + `_` + fieldname + `' ('entitiy_id' INTEGER NOT NULL UNIQUE, 'value' ` + fieldtype + `)`); err != nil {
-			return ErrCouldNotSetup
+			if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS '` + IndexPrefix + `_` + fieldname + `' ('entitiy_id' INTEGER NOT NULL UNIQUE, 'value' ` + fieldtype + `)`); err != nil {
+				return fmt.Errorf("schemalessql: required tables/indexes could not be created: %v", err)
+			}
+
+			if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS 'id_value_index' ON '` + IndexPrefix + `_` + fieldname + `' ('entitiy_id' ASC, 'value' ASC)`); err != nil {
+				return fmt.Errorf("schemalessql: required tables/indexes could not be created: %v", err)
+			}
 		}
-
-		if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS 'id_value_index' ON '` + IndexPrefix + `_` + fieldname + `' ('entitiy_id' ASC, 'value' ASC)`); err != nil {
-			return ErrCouldNotSetup
-		}
-
 	}
 
 	tx.Commit()
@@ -168,13 +160,13 @@ func (d *Datastore) Put(key *Key, src interface{}) (*Key, error) {
 	var buffer bytes.Buffer
 	enc := gob.NewEncoder(&buffer)
 	if err := enc.Encode(src); err != nil {
-		return key, err
+		return key, fmt.Errorf("schemalessql: could not encode entity: %v", err)
 	}
 
 	// begin transaction
 	tx, err := d.Begin()
 	if err != nil {
-		return key, err
+		return key, fmt.Errorf("schemalessql: could not insert data into db: %v", err)
 	}
 	defer tx.Rollback()
 
@@ -182,18 +174,18 @@ func (d *Datastore) Put(key *Key, src interface{}) (*Key, error) {
 		// insert data
 		stmt, err := tx.Prepare(`INSERT INTO '` + EntityTable + `' ('data') VALUES (?)`)
 		if err != nil {
-			return key, err
+			return key, fmt.Errorf("schemalessql: could not insert data into db: %v", err)
 		}
 		defer stmt.Close()
 
 		result, err := stmt.Exec(buffer.Bytes())
 		if err != nil {
-			return key, err
+			return key, fmt.Errorf("schemalessql: could not insert data into db: %v", err)
 		}
 
 		id, err := result.LastInsertId()
 		if err != nil {
-			return key, err
+			return key, fmt.Errorf("schemalessql: could not insert data into db: %v", err)
 		}
 
 		nkey := Key{id}
@@ -202,12 +194,12 @@ func (d *Datastore) Put(key *Key, src interface{}) (*Key, error) {
 		// update data
 		stmt, err := tx.Prepare(`REPLACE INTO '` + EntityTable + `' ('data', 'id') VALUES (?, ?)`)
 		if err != nil {
-			return key, err
+			return key, fmt.Errorf("schemalessql: could not insert data into db: %v", err)
 		}
 		defer stmt.Close()
 
 		if _, err := stmt.Exec(buffer.Bytes(), key.int64); err != nil {
-			return key, err
+			return key, fmt.Errorf("schemalessql: could not insert data into db: %v", err)
 		}
 	}
 
@@ -228,13 +220,13 @@ func (d *Datastore) Put(key *Key, src interface{}) (*Key, error) {
 func (d *Datastore) PutMulti(keys []*Key, srcs interface{}, breakOnError bool) ([]*Key, error) {
 	vsrcs := reflect.ValueOf(srcs)
 	if vsrcs.Kind() != reflect.Slice {
-		return keys, errors.New("source must be a slice")
+		return keys, fmt.Errorf("schemalessql: source must be a slice")
 	}
 
 	if keys == nil {
 		keys = make([]*Key, vsrcs.Len())
 	} else if len(keys) != vsrcs.Len() {
-		return keys, errors.New("keys and source slices must have equal length")
+		return keys, fmt.Errorf("schemalessql: keys and source slices must have equal length")
 	}
 
 	var e error
@@ -265,21 +257,20 @@ func (d *Datastore) createIndices(key *Key, e interface{}, tx *sql.Tx) error {
 		return err
 	}
 
-	for fieldname, _ /*fieldtype*/ := range codec {
+	for fieldname, _ := range codec {
 		fieldvalue := v.FieldByName(fieldname)
-		//log.Printf("indexing: %v => %v\t%v\n", fieldname, fieldtype, fieldvalue)
 
 		stmt, err := tx.Prepare(`REPLACE INTO '` + IndexPrefix + `_` + fieldname + `' ('entitiy_id', 'value') VALUES (?, ?)`)
 		if err != nil {
-			return err
+			return fmt.Errorf("schemalessql: could not insert data into db: %v", err)
 		}
 
+		// TODO: is this necessary?
 		switch vi := fieldvalue.Interface().(type) {
 		default:
-			//log.Println(vi)
 			if _, err := stmt.Exec(key.int64, vi); err != nil {
 				stmt.Close()
-				return err
+				return fmt.Errorf("schemalessql: could not insert data into db: %v", err)
 			}
 		}
 
@@ -300,7 +291,7 @@ func (d *Datastore) getStructCodec(v reflect.Value) (map[string]string, error) {
 		return d.structure.codec, nil
 	}
 
-	return nil, errors.New("schemalessql: unknown entity type")
+	return nil, fmt.Errorf("schemalessql: unknown entity type %v", t)
 }
 
 type BeforeLoader interface {
@@ -327,19 +318,23 @@ func (d *Datastore) Get(key *Key, dst interface{}) error {
 	// fetch gob encoded data
 	stmt, err := d.Prepare(`SELECT data FROM '` + EntityTable + `' WHERE id=?`)
 	if err != nil {
-		return err
+		return fmt.Errorf("schemalessql: could not query data from db: %v", err)
 	}
 	defer stmt.Close()
 
 	var data string
 	if err := stmt.QueryRow(key.int64).Scan(&data); err != nil {
-		return err
+		if err == sql.ErrNoRows {
+			return err
+		}
+
+		return fmt.Errorf("schemalessql: could not query data from db: %v", err)
 	}
 
 	// decode data
 	dec := gob.NewDecoder(bytes.NewBufferString(data))
 	if err := dec.Decode(dst); err != nil {
-		return err
+		return fmt.Errorf("schemalessql: could not decode entity: %v", err)
 	}
 
 	if al, ok := dst.(AfterLoader); ok {
@@ -352,11 +347,11 @@ func (d *Datastore) Get(key *Key, dst interface{}) error {
 func (d *Datastore) GetMulti(keys []*Key, dsts interface{}, breakOnError bool) error {
 	vdsts := reflect.ValueOf(dsts)
 	if vdsts.Kind() != reflect.Slice {
-		return errors.New("destination must be a slice")
+		return fmt.Errorf("schemalessql: destination must be a slice")
 	}
 
 	if len(keys) != vdsts.Len() {
-		return errors.New("keys and destination slices must have equal length")
+		return fmt.Errorf("schemalessql: keys and destination slices must have equal length")
 	}
 
 	var e error
@@ -386,18 +381,18 @@ func (d *Datastore) Delete(key *Key) error {
 
 	tx, err := d.Begin()
 	if err != nil {
-		return ErrCouldNotSetup
+		return fmt.Errorf("schemalessql: could not delete data from db: %v", err)
 	}
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(`DELETE FROM '` + EntityTable + `' WHERE id=?`)
 	if err != nil {
-		return err
+		return fmt.Errorf("schemalessql: could not delete data from db: %v", err)
 	}
 	defer stmt.Close()
 
 	if _, err := stmt.Exec(key.int64); err != nil {
-		return err
+		return fmt.Errorf("schemalessql: could not delete data from db: %v", err)
 	}
 
 	d.structure.RLock()
@@ -408,12 +403,12 @@ func (d *Datastore) Delete(key *Key) error {
 
 		stmt, err := tx.Prepare(`DELETE FROM '` + IndexPrefix + `_` + fieldname + `' WHERE entitiy_id=?`)
 		if err != nil {
-			return err
+			return fmt.Errorf("schemalessql: could not delete data from db: %v", err)
 		}
 		defer stmt.Close()
 
 		if _, err := stmt.Exec(key.int64); err != nil {
-			return err
+			return fmt.Errorf("schemalessql: could not delete data from db: %v", err)
 		}
 
 	}
@@ -452,13 +447,17 @@ func (d *Datastore) FindKeys(query map[string]interface{}) ([]*Key, error) {
 
 		stmt, err := d.Prepare(`SELECT entitiy_id FROM '` + IndexPrefix + `_` + fieldname + `' WHERE value=?`)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("schemalessql: could not query data from db: %v", err)
 		}
 		defer stmt.Close()
 
 		rows, err := stmt.Query(value)
 		if err != nil {
-			return nil, err
+			if err == sql.ErrNoRows {
+				return nil, err
+			}
+
+			return nil, fmt.Errorf("schemalessql: could not query data from db: %v", err)
 		}
 
 		for rows.Next() {
@@ -483,7 +482,7 @@ func (d *Datastore) FindKeys(query map[string]interface{}) ([]*Key, error) {
 func (d *Datastore) Find(query map[string]interface{}, destype interface{}) ([]interface{}, error) {
 	vdestype := reflect.ValueOf(destype)
 	if vdestype.Kind() != reflect.Struct {
-		return nil, errors.New("destination type must be a struct")
+		return nil, fmt.Errorf("schemalessql: destination type must be a struct")
 	}
 
 	keys, err := d.FindKeys(query)
