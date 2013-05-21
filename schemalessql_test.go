@@ -84,7 +84,8 @@ func TestCreate(t *testing.T) {
 	defer closeDB(t, db)
 
 	e := Entity{123, 123.456, true, []byte{12, 34, 56}, "foo", time.Now(), time.Duration(3) * time.Minute}
-	if _, err := db.Put(nil, e); err != nil {
+	key := schemalessql.NewIncompleteKey("Foo")
+	if _, err := db.Put(key, e); err != nil {
 		t.Fatalf("error creating entity: %v", err)
 	}
 }
@@ -94,7 +95,8 @@ func TestRead(t *testing.T) {
 	defer closeDB(t, db)
 
 	e := Entity{123, 123.456, true, []byte{12, 34, 56}, "foo", time.Now(), time.Duration(3) * time.Minute}
-	key, err := db.Put(nil, e)
+	key := schemalessql.NewIncompleteKey("Foo")
+	key, err := db.Put(key, e)
 	if err != nil {
 		t.Fatalf("error creating entity: %v", err)
 	}
@@ -114,7 +116,8 @@ func TestUpdate(t *testing.T) {
 	defer closeDB(t, db)
 
 	e := Entity{123, 123.456, true, []byte{12, 34, 56}, "foo", time.Now(), time.Duration(3) * time.Minute}
-	key, err := db.Put(nil, e)
+	key := schemalessql.NewIncompleteKey("Foo")
+	key, err := db.Put(key, e)
 	if err != nil {
 		t.Fatalf("error creating entity: %v", err)
 	}
@@ -141,7 +144,8 @@ func TestDelete(t *testing.T) {
 	defer closeDB(t, db)
 
 	e := Entity{123, 123.456, true, []byte{12, 34, 56}, "foo", time.Now(), time.Duration(3) * time.Minute}
-	key, err := db.Put(nil, e)
+	key := schemalessql.NewIncompleteKey("Foo")
+	key, err := db.Put(key, e)
 	if err != nil {
 		t.Fatalf("error creating entity: %v", err)
 	}
@@ -165,7 +169,12 @@ func TestCreateMulti(t *testing.T) {
 		Entity{456, 456.789, false, []byte{21, 43, 65}, "bar", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC), time.Duration(10) * time.Second},
 	}
 
-	if _, err := db.PutMulti(nil, entities, true); err != nil {
+	keys := []*schemalessql.Key{
+		schemalessql.NewIncompleteKey("Foo"),
+		schemalessql.NewIncompleteKey("Foo"),
+	}
+
+	if _, err := db.PutMulti(keys, entities, true); err != nil {
 		t.Fatalf("error creating entities: %v", err)
 	}
 }
@@ -179,7 +188,12 @@ func TestReadMulti(t *testing.T) {
 		Entity{456, 456.789, false, []byte{21, 43, 65}, "bar", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC), time.Duration(10) * time.Second},
 	}
 
-	keys, err := db.PutMulti(nil, entities, true)
+	keys := []*schemalessql.Key{
+		schemalessql.NewIncompleteKey("Foo"),
+		schemalessql.NewIncompleteKey("Foo"),
+	}
+
+	keys, err := db.PutMulti(keys, entities, true)
 	if err != nil {
 		t.Fatalf("error creating entities: %v", err)
 	}
@@ -205,7 +219,12 @@ func TestUpdateMulti(t *testing.T) {
 		Entity{456, 456.789, false, []byte{21, 43, 65}, "bar", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC), time.Duration(10) * time.Second},
 	}
 
-	keys, err := db.PutMulti(nil, entities, true)
+	keys := []*schemalessql.Key{
+		schemalessql.NewIncompleteKey("Foo"),
+		schemalessql.NewIncompleteKey("Foo"),
+	}
+
+	keys, err := db.PutMulti(keys, entities, true)
 	if err != nil {
 		t.Fatalf("error creating entities: %v", err)
 	}
@@ -243,7 +262,12 @@ func TestDeleteMulti(t *testing.T) {
 		Entity{456, 456.789, false, []byte{21, 43, 65}, "bar", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC), time.Duration(10) * time.Second},
 	}
 
-	keys, err := db.PutMulti(nil, entities, true)
+	keys := []*schemalessql.Key{
+		schemalessql.NewIncompleteKey("Foo"),
+		schemalessql.NewIncompleteKey("Foo"),
+	}
+
+	keys, err := db.PutMulti(keys, entities, true)
 	if err != nil {
 		t.Fatalf("error creating entities: %v", err)
 	}
@@ -277,7 +301,8 @@ func TestCreateHooks(t *testing.T) {
 	defer closeDB(t, db)
 
 	e := EntityCreateHook{Data: "A"}
-	key, err := db.Put(nil, &e)
+	key := schemalessql.NewIncompleteKey("Foo")
+	key, err := db.Put(key, &e)
 	if err != nil {
 		t.Fatalf("error creating entity: %v", err)
 	}
@@ -313,7 +338,8 @@ func TestReadHooks(t *testing.T) {
 	defer closeDB(t, db)
 
 	e := EntityReadHook{Data: "A"}
-	key, err := db.Put(nil, &e)
+	key := schemalessql.NewIncompleteKey("Foo")
+	key, err := db.Put(key, &e)
 	if err != nil {
 		t.Fatalf("error creating entity: %v", err)
 	}
@@ -337,7 +363,12 @@ func TestQueryMulti(t *testing.T) {
 		Entity{456, 456.789, true, []byte{21, 43, 65}, "bar", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC), time.Duration(10) * time.Second},
 	}
 
-	if _, err := db.PutMulti(nil, entities, true); err != nil {
+	keys := []*schemalessql.Key{
+		schemalessql.NewIncompleteKey("Foo"),
+		schemalessql.NewIncompleteKey("Foo"),
+	}
+
+	if _, err := db.PutMulti(keys, entities, true); err != nil {
 		t.Fatalf("error creating entities: %v", err)
 	}
 
@@ -395,7 +426,12 @@ func TestQuery(t *testing.T) {
 		Entity{456, 456.789, true, []byte{21, 43, 65}, "bar", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC), time.Duration(10) * time.Second},
 	}
 
-	if _, err := db.PutMulti(nil, entities, true); err != nil {
+	keys := []*schemalessql.Key{
+		schemalessql.NewIncompleteKey("Foo"),
+		schemalessql.NewIncompleteKey("Foo"),
+	}
+
+	if _, err := db.PutMulti(keys, entities, true); err != nil {
 		t.Fatalf("error creating entities: %v", err)
 	}
 

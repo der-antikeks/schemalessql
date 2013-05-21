@@ -23,7 +23,8 @@ Example:
 
 	// create
 	e := Entity{"data", time.Now()}
-	key, err := db.Put(nil, e)
+	key := schemalessql.NewIncompleteKey("Foo")
+	key, err := db.Put(key, e)
 
 	// update
 	e.Value = "updated data"
@@ -41,7 +42,11 @@ Example:
 		Entity{"A", time.Now()},
 		Entity{"B", time.Now()},
 	}
-	keys, err := db.PutMulti(nil, entities, true)
+	keys := []*schemalessql.Key{
+		schemalessql.NewIncompleteKey("Foo"),
+		schemalessql.NewIncompleteKey("Foo"),
+	}
+	keys, err := db.PutMulti(keys, entities, true)
 
 	results := make([]Entity, len(keys))
 	err := db.GetMulti(keys, results, true)

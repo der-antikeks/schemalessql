@@ -139,9 +139,19 @@ func (d *Datastore) Register(src interface{}) error {
 	return nil
 }
 
-// Key is the primary key of a saved Entity
+// Key determines the kind of an Entity and serves as the primary key
 type Key struct {
-	int64
+	id    int64
+	kind  string
+	hasid bool
+}
+
+func NewKey(kind string, id int64) *Key {
+	return &Key{id, kind, true}
+}
+
+func NewIncompleteKey(kind string) *Key {
+	return &Key{kind: kind, hasid: false}
 }
 
 // The BeforeSave() method of an entity that satisfies schemalessql.BeforeSaver is called before saving to database.
@@ -180,7 +190,7 @@ func (d *Datastore) Put(key *Key, src interface{}) (*Key, error) {
 	}
 	defer tx.Rollback()
 
-	if key == nil {
+	if !key.hasid {
 		// insert data
 		stmt, err := tx.Prepare(`INSERT INTO '` + EntityTable + `' ('data') VALUES (?)`)
 		if err != nil {
@@ -198,8 +208,12 @@ func (d *Datastore) Put(key *Key, src interface{}) (*Key, error) {
 			return key, fmt.Errorf("schemalessql: could not insert data into db: %v", err)
 		}
 
-		nkey := Key{id}
-		key = &nkey
+		/*
+			nkey := Key{id}
+			key = &nkey
+		*/
+		key.id = id
+		key.hasid = true
 	} else {
 		// update data
 		stmt, err := tx.Prepare(`REPLACE INTO '` + EntityTable + `' ('data', 'id') VALUES (?, ?)`)
@@ -208,7 +222,7 @@ func (d *Datastore) Put(key *Key, src interface{}) (*Key, error) {
 		}
 		defer stmt.Close()
 
-		if _, err := stmt.Exec(buffer.Bytes(), key.int64); err != nil {
+		if _, err := stmt.Exec(buffer.Bytes(), key.id); err != nil {
 			return key, fmt.Errorf("schemalessql: could not insert data into db: %v", err)
 		}
 	}
@@ -237,6 +251,7 @@ func (d *Datastore) PutMulti(keys []*Key, srcs interface{}, breakOnError bool) (
 
 	if keys == nil {
 		keys = make([]*Key, vsrcs.Len())
+		// TODO: must key specify a kind?
 	} else if len(keys) != vsrcs.Len() {
 		return keys, fmt.Errorf("schemalessql: keys and source slices must have equal length")
 	}
@@ -281,7 +296,7 @@ func (d *Datastore) createIndices(key *Key, e interface{}, tx *sql.Tx) error {
 		// TODO: is this necessary?
 		switch vi := fieldvalue.Interface().(type) {
 		default:
-			if _, err := stmt.Exec(key.int64, vi); err != nil {
+			if _, err := stmt.Exec(key.id, vi); err != nil {
 				stmt.Close()
 				return fmt.Errorf("schemalessql: could not insert data into db: %v", err)
 			}
@@ -321,7 +336,7 @@ type AfterLoader interface {
 // Get fetches an entity with the Key and gob-decodes it into the provided interface.
 // If no entry is found for this Key, sql.ErrNoRows is returned.
 func (d *Datastore) Get(key *Key, dst interface{}) error {
-	if key == nil {
+	if key == nil || !key.hasid {
 		return sql.ErrNoRows
 	}
 
@@ -341,7 +356,7 @@ func (d *Datastore) Get(key *Key, dst interface{}) error {
 	defer stmt.Close()
 
 	var data string
-	if err := stmt.QueryRow(key.int64).Scan(&data); err != nil {
+	if err := stmt.QueryRow(key.id).Scan(&data); err != nil {
 		if err == sql.ErrNoRows {
 			return err
 		}
@@ -397,7 +412,7 @@ func (d *Datastore) GetMulti(keys []*Key, dsts interface{}, breakOnError bool) e
 // Delete removes the entity of the provided Key and its indices from the database.
 // If no entry is found for this Key, sql.ErrNoRows is returned.
 func (d *Datastore) Delete(key *Key) error {
-	if key == nil {
+	if key == nil || !key.hasid {
 		return sql.ErrNoRows
 	}
 
@@ -413,7 +428,7 @@ func (d *Datastore) Delete(key *Key) error {
 	}
 	defer stmt.Close()
 
-	if _, err := stmt.Exec(key.int64); err != nil {
+	if _, err := stmt.Exec(key.id); err != nil {
 		return fmt.Errorf("schemalessql: could not delete data from db: %v", err)
 	}
 
@@ -429,7 +444,7 @@ func (d *Datastore) Delete(key *Key) error {
 		}
 		defer stmt.Close()
 
-		if _, err := stmt.Exec(key.int64); err != nil {
+		if _, err := stmt.Exec(key.id); err != nil {
 			return fmt.Errorf("schemalessql: could not delete data from db: %v", err)
 		}
 
@@ -494,9 +509,12 @@ func (d *Datastore) FindKeys(query map[string]interface{}) ([]*Key, error) {
 	l := len(query)
 	var result []*Key
 
+	// TODO: get entity kind from db
+	kind := ""
+
 	for i, n := range tmp {
 		if n == l {
-			result = append(result, &Key{i})
+			result = append(result, NewKey(kind, i))
 		}
 	}
 
