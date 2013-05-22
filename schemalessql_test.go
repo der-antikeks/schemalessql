@@ -41,7 +41,7 @@ func TestRegisterStruct(t *testing.T) {
 	defer closeDB(t, db)
 
 	a := Entity{123, 123.456, true, []byte{12, 34, 56}, "foo", time.Now(), time.Duration(3) * time.Minute}
-	if err := db.Register(a); err != nil {
+	if err := db.Register(a, "foo"); err != nil {
 		t.Fatalf("error registering entity: %v", err)
 	}
 }
@@ -51,7 +51,7 @@ func TestRegisterPointer(t *testing.T) {
 	defer closeDB(t, db)
 
 	var a Entity
-	if err := db.Register(&a); err != nil {
+	if err := db.Register(&a, "foo"); err != nil {
 		t.Fatalf("error registering entity: %v", err)
 	}
 }
@@ -69,14 +69,15 @@ func TestRegisterDuplicate(t *testing.T) {
 	defer closeDB(t, db)
 
 	var a EntityA
-	if err := db.Register(&a); err != nil {
+	if err := db.Register(&a, "foo"); err != nil {
 		t.Fatalf("error registering entity a: %v", err)
 	}
 
 	var b EntityB
-	if err := db.Register(&b); err == nil {
-		t.Fatalf("should receive error while registering entity b but got: %v", err)
+	if err := db.Register(&b, "foo"); err != nil {
+		t.Fatalf("error registering entity b with duplicate field name and different type: %v", err)
 	}
+
 }
 
 func TestCreate(t *testing.T) {
