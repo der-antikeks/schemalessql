@@ -49,14 +49,27 @@ Example:
 	err := db.DeleteMulti(keys, true)
 
 	// query
-	query := map[string]interface{}{
+	q := map[string]interface{}{
 		"A": 123,
 		"C": true,
 	}
-	results, err := db.Find(query, Entity{})
 
-	var r Entity
-	err := db.FindOne(query, &r)
+	q, err = db.Query(q)
+	if err != nil {
+		t.Fatalf("error finding entity: %v", err)
+	}
+
+	for {
+		var r Entity
+		key, err := q.Next(&r)
+
+		if err == schemalessql.Done {
+			break
+		}
+		if err != nil {
+			t.Fatalf("error finding entity: %v", err)
+		}
+	}
 
 */
 package schemalessql

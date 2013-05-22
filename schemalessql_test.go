@@ -328,64 +328,6 @@ func TestReadHooks(t *testing.T) {
 	}
 }
 
-func TestQueryMulti(t *testing.T) {
-	db := newDB(t)
-	defer closeDB(t, db)
-
-	entities := []interface{}{
-		Entity{123, 123.456, true, []byte{12, 34, 56}, "foo", time.Now(), time.Duration(3) * time.Minute},
-		Entity{456, 456.789, true, []byte{21, 43, 65}, "bar", time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC), time.Duration(10) * time.Second},
-	}
-
-	if _, err := db.PutMulti(nil, entities, true); err != nil {
-		t.Fatalf("error creating entities: %v", err)
-	}
-
-	// find one
-	query := map[string]interface{}{
-		"A": 123,
-		"C": true,
-	}
-
-	results, err := db.Find(query, Entity{})
-	if err != nil {
-		t.Fatalf("error finding entities: %v", err)
-	}
-
-	if n := len(results); n != 1 {
-		t.Fatalf("error finding entities, number of results: %v", n)
-	}
-
-	if !reflect.DeepEqual(entities[0], results[0]) {
-		t.Fatalf("error finding entities, result does not match: \n%v\n%v", entities[0], results[0])
-	}
-
-	// find two
-	results, err = db.Find(map[string]interface{}{"C": true}, Entity{})
-	if err != nil {
-		t.Fatalf("error finding entities: %v", err)
-	}
-
-	if n := len(results); n != 2 {
-		t.Fatalf("error finding entities, number of results: %v", n)
-	}
-
-	if !reflect.DeepEqual(entities[0], results[0]) || !reflect.DeepEqual(entities[1], results[1]) {
-		t.Fatalf("error finding entities, result does not match: \n%v\n%v", entities[0], results[1])
-	}
-
-	// find nothing
-	results, err = db.Find(map[string]interface{}{"C": false}, Entity{})
-	if err != nil {
-		t.Fatalf("error finding entities: %v", err)
-	}
-
-	if n := len(results); n != 0 {
-		t.Fatalf("error finding entities, number of results: %v", n)
-	}
-
-}
-
 func TestQuery(t *testing.T) {
 	db := newDB(t)
 	defer closeDB(t, db)
@@ -400,23 +342,55 @@ func TestQuery(t *testing.T) {
 	}
 
 	// find one
-	query := map[string]interface{}{
-		"A": 456,
+	q, err := db.Query(map[string]interface{}{
+		"A": 123,
 		"C": true,
-	}
-
-	var r Entity
-	if err := db.FindOne(query, &r); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("error finding entity: %v", err)
 	}
 
-	if !reflect.DeepEqual(entities[1], r) {
-		t.Fatalf("error finding entity, result does not match: \n%v\n%v", entities[0], r)
+	var r1 Entity
+	_, err = q.Next(&r1)
+	if err == schemalessql.Done {
+		t.Fatalf("error finding entity: %v", err)
+	}
+
+	if !reflect.DeepEqual(entities[0], r1) {
+		t.Fatalf("error finding entity, result does not match: \n%v\n%v", entities[0], r1)
+	}
+
+	// find two
+	q, err = db.Query(map[string]interface{}{"C": true})
+	if err != nil {
+		t.Fatalf("error finding entity: %v", err)
+	}
+
+	for i := 0; i < 3; i++ {
+		var r2 Entity
+		_, err := q.Next(&r2)
+
+		if i == 2 && err == schemalessql.Done {
+			break
+		}
+		if err != nil {
+			t.Fatalf("error finding entity: %v", err)
+		}
+
+		if !reflect.DeepEqual(entities[i], r2) {
+			t.Fatalf("error finding entity, result does not match: \n%v\n%v", entities[i], r2)
+		}
 	}
 
 	// find nothing
-	if err := db.FindOne(map[string]interface{}{"C": false}, &r); err != sql.ErrNoRows {
+	q, err = db.Query(map[string]interface{}{"C": false})
+	if err != nil {
 		t.Fatalf("error finding entity: %v", err)
 	}
 
+	var r0 Entity
+	_, err = q.Next(&r0)
+	if err != schemalessql.Done {
+		t.Fatalf("error finding entity: %v", err)
+	}
 }
