@@ -3,7 +3,7 @@ Schemaless SQL
 
 Example:
 
-	db := schemalessql.Open("sqlite3", "./foo.db")
+	db, _ := schemalessql.Open("sqlite3", "./foo.db")
 	defer db.Close()
 
 	type Entity struct {
