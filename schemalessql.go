@@ -503,52 +503,38 @@ func (d *Datastore) FindKeys(query map[string]interface{}) ([]*Key, error) {
 	return result, nil
 }
 
-// Find searches indexed fields for all entries that match the filter criteria and returns these as a slice of the provided interface.
-// If no entry is found, sql.ErrNoRows is returned.
-func (d *Datastore) Find(query map[string]interface{}, destype interface{}) ([]interface{}, error) {
-	vdestype := reflect.ValueOf(destype)
-	if vdestype.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("schemalessql: destination type must be a struct")
-	}
+// Iterator is the result of a query.
+type Iterator struct {
+	d    *Datastore
+	keys []*Key
+	cur  int
+}
 
+// Find searches indexed fields for all entries that match the filter criteria and returns an Iterator with the resulting
+func (d *Datastore) Query(query map[string]interface{}) (*Iterator, error) {
 	keys, err := d.FindKeys(query)
 	if err != nil {
 		return nil, err
 	}
 
-	var dsts []interface{}
-	for _, key := range keys {
-
-		// I must admit that I have no idea why I can not directly pass the value instead of the pointer
-		// TODO: panic: reflect: NumField of non-struct type @ Register() :84
-		//e := reflect.Zero(vdestype.Type()).Interface()
-		e := reflect.New(vdestype.Type()).Interface()
-		err := d.Get(key, e /* & */)
-		if err != nil {
-			return nil, err
-		}
-
-		//dsts = append(dsts, e)
-		dsts = append(dsts, reflect.ValueOf(e).Elem().Interface())
-	}
-
-	return dsts, nil
+	return &Iterator{d, keys, 0}, nil
 }
 
-// FindOne is identical to Find, except that it returns only one entity.
-func (d *Datastore) FindOne(query map[string]interface{}, dst interface{}) error {
-	keys, err := d.FindKeys(query)
-	if err != nil {
-		return err
+// Done is returned if no more entries are found.
+var Done = fmt.Errorf("schemalessql: no more entities found")
+
+// Next returns the Key of the next result. If dst is non-nil the entity is loaded into the struct pointer.
+// If no more entries are found, datastore.Done is returned as the error.
+func (i *Iterator) Next(dst interface{}) (*Key, error) {
+	if i.cur >= len(i.keys) {
+		return nil, Done
 	}
 
-	if len(keys) < 1 {
-		return sql.ErrNoRows
+	k := i.keys[i.cur]
+	if err := i.d.Get(k, dst); err != nil {
+		return nil, err
 	}
 
-	if err := d.Get(keys[0], dst); err != nil {
-		return err
-	}
-
-	return nil
+	i.cur++
+	return k, nil
 }

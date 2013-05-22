@@ -1,8 +1,5 @@
 # Schemaless SQL
 
-__TODO:__
-* unify api (Find/FindOne)
-
 __Usage:__
 
 	package main
